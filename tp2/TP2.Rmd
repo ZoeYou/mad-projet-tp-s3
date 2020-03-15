@@ -1,0 +1,58 @@
+---
+title: "TP2"
+author: "You ZUO"
+date: "2019/9/23"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## exo1
+```{r}
+library(mclust)
+library(nnet)
+data("iris")
+head(iris)
+
+C <- class.ind(cl = iris$Species)
+X <- matrix(iris[,-5])
+
+mu_T <- sapply(iris[,1:4], mean) 
+
+n_k <- sapply(1:3, function(i){
+  sum(C[,i])
+})
+mu_k <- t(as.matrix(C)) %*% as.matrix(iris[,1:4]) / n_k
+
+
+```
+
+##exo4
+```{r}
+library(MASS)
+data(crabs)
+help(crabs)
+pairs(x = crabs[,4:8], col = c("blue","orange")[crabs$sp], pch = c(20,21)[crabs$sex])
+```
+```{r}
+cor <- cor(crabs[,4:8])
+corrplot::corrplot(cor, method = "ellipse", tl.cex = 0.9)
+
+km4 <- kmeans(x = crabs[,4:8], nstart = 1, centers = 4)
+plot(x = crabs[,4:8], col = km4$cluster)
+points(km4$centers, col = 1:5, pch = 8)
+crabsquant <- crabs[,4:8]
+hist(sapply(1:1000, function(i){kmeans(x = as.double(as.matrix(crabsquant)), centers = 4, nstart = 30)}$tot.withinss))
+```
+
+```{r}
+crabsquant2 <- crabsquant[,-3]/crabsquant$CL
+names(crabsquant2) <- paste(names(crabsquant[,-3]),"/CL")
+
+kmeans(crabsquant2, 4, nstart = 30)$cluster -> cluster
+natural.classes <- paste(crabs$sex, crabs$sp, sep = "-")
+table(cluster, natural.classes)
+```
+

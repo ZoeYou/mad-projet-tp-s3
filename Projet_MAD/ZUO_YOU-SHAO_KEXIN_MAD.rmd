@@ -1,0 +1,414 @@
+---
+title: "Mélange de Bernoulli"
+author: ""
+header-includes:
+   - \usepackage{algorithm}
+   - \usepackage{algorithmic}
+date: "24/10/2018"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Modèle
+
+
+Considérons un vecteur aléatoire binaire $\boldsymbol{x} \in [0,1]^p$ de $p$ variables $x_j$ suivant chacune
+une distribution de Bernoulli $\mathcal{B}(\mu_j)$. La distribution du vecteur s'exprime comme:
+$$
+p(\boldsymbol{x}| \boldsymbol{\mu}) = \prod_{j=1}^p \mu_j^{x_j} (1-\mu_j)^{1-x_j}, 
+$$
+avec $\boldsymbol{x}=(x_1, \cdots, x_p)^T$ et  $\boldsymbol{\mu}=(\mu_1, \cdots, \mu_p)^T$.
+
+Soit une distribution  mélange à $K$ composantes  de Bernoulli
+$$
+p(\boldsymbol{x} | \boldsymbol{\pi}, \boldsymbol{M}) = \sum_{k=1}^K
+                  \pi_k p(\boldsymbol{x} | \boldsymbol{\mu}_k)
+$$
+où les $\pi_k$ sont les proportions du mélange et les $p(\boldsymbol{x} | \boldsymbol{\mu}_k)$ sont des distributions de Bernoulli multivariées de
+paramètres  $\boldsymbol{\mu}_k=(\mu_{k1}, \cdots, \mu_{kp})^T$, et $M=\{\boldsymbol{\mu}_1, \cdots , \boldsymbol{\mu}_K\}^T$
+la matrice des paramètres des densités de classes.
+
+Dans la suite nous considérerons
+\begin{itemize}
+\item un échantillon observé $X = \{\boldsymbol{x}_1, \cdots, \boldsymbol{x}_n\}$ issu de cette distribution mélange, 
+\item des  variables latentes $Z=\{z_1, \cdots, z_n\}$ indiquant la composante d'origine de chaque $\boldsymbol{x}_i$.  
+\end{itemize}
+
+```{r , echo=FALSE,  warning=FALSE, error=FALSE, include=FALSE}
+library(tidyverse)
+library(reshape2)
+```
+  
+## Simulation
+```{r}
+set.seed(3)
+K<-3
+p<-50
+n<-200
+pi<-c(1/3,1/3,1/3)
+M<-matrix(runif(K*p),K,p)
+M[K,]<-1-M[1,]
+nks<-rmultinom(1,200,prob = pi)
+Z<-rep(1:length(nks),nks)
+X <-do.call(rbind, 
+                  mapply(function(nk,k){
+                    matrix(rbernoulli(nk*p,p=M[k,]),
+                           nrow = nk,
+                           ncol=p,
+                           byrow = TRUE)}, nks,1:K))
+
+real_X <- melt(X)
+ggplot(real_X, aes(x = Var2, y = Var1)) + 
+  geom_raster(aes(fill=value)) + 
+  scale_fill_brewer(aesthetics = "fill") + 
+  labs(x="Variables", y="Individus", title="Matrix")
+
+
+kmeans(X,3,nstart = 10)->res.kmeans
+# réorganiser selon les paramêtres de la première composante
+tidyData<-melt(X[order(res.kmeans$cluster),order(M[1,])]) 
+
+ggplot(tidyData, aes(x = Var2, y = Var1)) + 
+  geom_raster(aes(fill=value)) + 
+  scale_fill_brewer(aesthetics = "fill") + 
+  labs(x="Variables", y="Individus", title="Résultats de kMeans") 
+```
+
+Selon les deux matrix en-dessous nous avons constaté que: 
+
+* Dans la première matrice, puisque la somme des paramètres du troisième composant et des paramètres correspondants de la première partie est 1, nous voyons que les valeurs de la première partie et de la troisième partie sont exactement opposées;
+* Nous avons vérifié les résultats de K-means et la méthode a bien trouvé les bons cluters;
+* Dans la deuxième matrice, les colonnes de la matrice sont disposées dans l'ordre croissant des paramètres de la première composante, et les lignes sont de l'ordre cluster2, 3 et 1.
+
+
+## Exo 2 Équations de l’algorithme EM
+### 1.
+D'abord nous avons:
+$$p(X|Z,\theta)=\prod_{i=1}^N\prod_{k=1}^Kp(X_i|Z_i=k,\mu_k)^{z_{ik}}$$
+aussi
+$$p(Z|\theta)=\prod_{i=1}^N\prod_{k=1}^K\pi_k^{z_{ik}}$$
+nous avons donc
+$$p(X,Z|\theta)=p(X|Z,\theta)\times p(Z|\theta)=\prod_{i=1}^N\prod_{k=1}^K{\pi_kp(X_i|Z_i=k,\mu_k)}^{z_{ik}}$$
+Et enfin nou avons
+\begin{align*}
+\mathrm{ln}p(X,Z|\theta)&=\sum_{i=1}^N\sum_{k=1}^K{z_{ik}}{\{\mathrm{ln}\pi_k+\mathrm{ln}p(X_i|Z_i=k,\mu_k)}\}\\
+&=\sum_{i=1}^N\sum_{k=1}^K{z_{ik}}{\{\mathrm{ln}\pi_k+\mathrm{ln}f_k(X_i|\mu_k)}\}
+\end{align*}
+
+### 2.
+\begin{align*}
+{\tau_{ik}}^q&=\mathbb{E}[Z_{ik}|X_i,\theta^q]\\
+&=\mathbb{E}[1_{z_i=k}|X_i,\theta^q]\\
+&=\mathbb{P}(z_i=k|X_i,\theta^q)\\
+&=\frac{\mathbb{P}(z_i=k,X_i|\theta^q)}{\mathbb{P}(X_i|\theta^q)}\\
+&=\frac{\pi_kf_k(X_i|\mu_k)}{f(X_i|\theta^q)}\\
+&=\frac{\pi_kf_k(X_i|\mu_k)}{\sum_{l=1}^K\pi_lf_l(X_i|\mu_l)}\\
+&=\frac{\pi_k\prod_{j=1}^p\mu_{kj}^{x_{ij}}(1-\mu_{kj})^{(1-x_{ij})}}{\sum_{l=1}^K\pi_l\prod_{j=1}^p\mu_{lj}^{x_{ij}}(1-\mu_{lj})^{(1-x_{ij})}}
+\end{align*}
+
+### 3.
+\begin{align*}
+Q(\theta^q|\theta^{q-1})&=\mathbb{E}_{\theta}[lnp_\theta(X,Z)|X]\\
+&=\mathbb{E}_{\theta}[\sum_{i=1}^N\sum_{j=1}^KZ_{ik}[ln\pi_k+lnf_k(X_k|\mu_k)]\\
+&=\sum_{i=1}^N\sum_{j=1}^K\mathbb{E}_{\theta}(Z_{ik}|X_i)[ln\pi_k+lnf_k(X_k|\mu_k)]\\
+&=\sum_{i=1}^N\sum_{j=1}^K\tau_{ik}[ln\pi_k+lnf_k(X_k|\mu_k)]
+\end{align*}
+
+### 4.
+$$\theta^{q+1}=arg\max_\theta(\mathbb{Q}(\theta^{q}|\theta))=arg\max_\theta\{\sum_{i=1}^N\sum_{j=1}^K\tau_{ik}[ln\pi_k+lnf_k(X_k|\mu_k)]\}$$
+
+### 5.
+Sur l'étape Maximisation nous avons:
+$$\theta^{q+1}=arg\max_\theta(\mathbb{Q}(\theta^{q}|\theta))$$
+donc nous avons 
+$$\frac{\partial\mathbb{Q}(\theta^{q}|\theta)}{\partial\mu_{k}}=0\leftrightarrow\mu_{k}^{q+1}=\frac{\sum_{i=1}^{N}\tau_{ik}^{q}x_{i}}{\sum_{i=1}^{N}\tau_{ik}^{q}}$$
+et
+$$\pi_{k}^{q+1}=\frac{\sum_{i=1}^N\tau_{ik}^{q}}{N}$$
+
+### 6.
+C'est la terme d'entropie des variables latantes étant donné le $Y$ observé:
+\begin{align*}
+H[p_{\theta}(Z|X)]&=\sum_iH[p_\theta(Z_i|X_i)]\\
+&=-\sum_i\mathbb{E}_\theta[lnP(Z_i=k|X_i)|X_i]\\
+&=-\sum_i\sum_k\tau_{ik}ln\tau_{ik}
+\end{align*}
+
+### 7.
+Nous avons:
+$$\mathbb{E}_\theta[lnp_\theta(Z|X)|X]=\mathbb{E}_\theta[lnp_\theta(X,Z)-lnp_\theta(X)|X)]$$
+avec $\mathbb{E}_\theta[lnp_\theta(X)|X)]=lnp_\theta(X)$
+donc nous aurons:
+$$lnp_{\hat{\theta}}(X|\theta=\{\pi,M\})=\mathbb{E}_\theta[lnp_\theta(X,Z)|X]-\mathbb{E}_\theta[lnp_\theta(Z|X)|X]$$
+
+### 8.
+le critère BIC associé à un modèle à K classes:
+$$K_{BIC}=lnp_{\hat{\theta}_K}(X)-\frac{d_K}{2}ln(n)$$
+d'où $d_K$ désigne le nombre de paramètres indépendants dans un modèle avec $K$ composants, $n$ le nombre d'échantillons, et 
+$$lnp_{\hat{\theta}_K}(X)=\sum_{n=1}^Nln\{\sum_{k=1}^K\hat{\pi}_k\times p(X_n|\hat{\mu}_k)\}$$
+
+### 9.
+le critère ICL associé à un modèle à K classes:
+$$K_{ICL}=\mathbb{E}_{\hat{\theta}K}[lnp_{\hat{\theta}_K}(X,Z)|X]-\frac{d_K}{2}ln(n)$$
+d'où $d_K$ désigne le nombre de paramètres indépendants dans un modèle avec $K$ composants, $n$ le nombre d'échantillons, et 
+$$\mathbb{E}_{\hat{\theta}K}[lnp_{\hat{\theta}_K}(X,Z)|X]=\sum_{n=1}^N\sum_{k=1}^K\tau_{ik}(ln\pi_k+ln\mathcal{f}_k(X_n))$$
+
+### 10.
+\begin{algorithm*}
+\caption{EM}
+\begin{algorithmic}
+\STATE \textbf{Initialize\,:\:}\text{a\:random\:}$\theta^{0}$
+\STATE $q\leftarrow0$
+\WHILE{$||\theta^{q}-\theta^{q+1}||>\epsilon$}
+\STATE $Expectation\ step:\ compute\ {\mathbb{E}_\theta}^q[lnp_\theta(X,Z)|X]$
+\STATE $Maximazation\ step:\ \theta^{q+1}=\smash{\mathop{{\rm argmax}}\limits_{\theta}}\,(\mathbb{Q}(\theta^{q}/\theta))=\smash{\mathop{{\rm argmax}}\limits_{\theta}}{\mathbb{E}_\theta}^q[lnp_\theta(X,Z)|X]$
+\STATE $q\leftarrow q+1$
+\ENDWHILE
+\RETURN $\theta^q$
+\end{algorithmic}
+\end{algorithm*}
+
+## Exo 3 Programmation de l’algorithme EM
+### 1. E-step
+```{r}
+E_step <- function(params=list(pi=pi,M=M),X) {
+  K <- length(params$pi)
+  N <- nrow(X)
+  tau <- matrix(NA,N,K)
+  for (k in 1:K) {
+    for (i in 1:N) {
+      tau[i,k]<-(params$pi[k]*prod(dbinom(x = X[i,],size = 1,prob = M[k,])))/sum(sapply(1:K,function(l){
+        params$pi[l]*prod(dbinom(x = X[i,],size = 1,prob = M[l,]))
+      }))
+    }
+  }
+  return(tau)
+}
+```
+
+```{r}
+params <- list(pi=pi,M=M)
+tau <- E_step(params,X)
+tau
+```
+
+Selon les résultats des variables $\tau_{ik}$, nous avons constaté que de quel composante de $K$ la variable $X_i$ appartient, la valeur correspondante de $\tau_{ik}$ est très proche de 1, et la valeur de $\tau_{ik}$ pour laquelle $k$ n'est pas égal à $K$ est très petite.
+
+### 2. M-step
+```{r}
+M_step <- function(X, tau, params) {
+  N <- nrow(X)
+  K <- ncol(tau)
+  pi <- params$pi
+  mu <- params$M
+  
+  for (k in 1:K) {
+    N_k <- sum(tau[,k])
+    pi[k] <- N_k/N
+    
+    if(N_k!=0) {
+      mu[k,] <- 1/N_k*rowSums(sapply(1:N, function(n){
+        tau[n,k]*X[n,]
+      }))
+    }
+  }
+  
+  return(list(pi=pi,M=mu))
+}
+```
+
+```{r}
+params <- M_step(X, tau, params)
+matrix(params$pi,1,3,dimnames = list(c("val"), c("pi_1","pi_2","pi_3")))
+t(params$M)
+```
+
+Ce sont les valeurs du paramètre calculée à l'aide de la fonction M_step écrite par nous-mêmes. Après comparaison avec les valeur réelles, nous constatons que les résultats sont plus précis.
+
+### 3. l’algorithme EM
+```{r}
+Init.EM <- function(X, K=3) {
+  pi <- rep(x = 1/K, times = K)
+  # pi <- c(0.9,0.05,0.05)
+  M <- matrix(0.5,K,ncol(X))
+  params <- list(pi = pi, M = M)
+  return(params)
+}
+
+EM <- function(X, K) {
+  params <- Init.EM(X, K)
+  iter <- 0
+  params.new <- params
+  repeat{
+    tau <- E_step(params = params.new, X)
+    params <- M_step(X, tau, params)
+    if((sum(unlist(params.new) - unlist(params))^2) / sum(unlist(params.new))^2 < 1e-20) break
+    params.new <- params
+  }
+  return(list(params = params.new, tau = tau))
+}
+```
+
+```{r}
+matrix(EM(X,3)$params$pi,1,3,dimnames = list(c("val"), c("pi_1","pi_2","pi_3")))
+t(EM(X,3)$params$M)
+```
+
+### 4. l’évolution de la vraisemblance à chaque demi-étape
+
+La vraisemblance est précisement la vraisemblance complète:
+$$\mathcal{L}=p(X,Z|\theta=\{\pi,M\})=\prod_{n}\prod_{k}({\pi_k}\times\mathcal{B}(X_n|\mu_k))^{Z_{nk}}$$
+Mais étant donné que la probabilité et la valeur de la proportion sont toutes deux inférieures à 1, leur produit tend vers 0 après plusieurs fois de multiplications. Nous calculons ici donc la log-vraisemblance:
+$$ln\mathcal{L}=lnp(X,Z|\theta=\{\pi,M\})=\sum_{n}\sum_{k}{Z_{nk}(ln{\pi_k}+ ln\mathcal{f}_k(X_n))}$$
+
+```{r}
+log_vrsblc <- function(X, params, tau) {
+  N <- nrow(X)
+  K <- length(params$pi)
+  # Z <- rep(1:K,params$pi*N) 
+  Z <- apply(tau, 1, which.max) # uncertain
+  logL <- 0
+  
+  for (n in 1:N) {
+    for (k in 1:K) {
+      logL <- logL + ifelse(Z[n]==k,1,0)*(log(params$pi[k])+log(prod(dbinom(X[n,],1,params$M[k,]))))
+    }
+  }
+  
+  return(logL)
+}
+```
+
+```{r}
+log_vrsblc(X,params,tau)
+```
+
+```{r}
+EM.trace <- function(X, K) {
+  params <- Init.EM(X, K)
+  iter <- 0
+  params.new <- params
+  logLs <- c()
+  
+  repeat{
+    tau <- E_step(params = params.new, X)
+    logLs <- append(logLs, log_vrsblc(X,params,tau))  # calcule log-vraisemblance après l'étape E
+    
+    params <- M_step(X, tau, params)
+    logLs <- append(logLs, log_vrsblc(X,params,tau))  # calcule log-vraisemblance après l'étape M
+    
+    if((sum(unlist(params.new) - unlist(params))^2) / sum(unlist(params.new))^2 < 1e-20) break
+    params.new <- params
+  }
+  return(list(params = params.new, tau = tau, logLs = logLs))
+}
+```
+
+```{r}
+logLs <- EM.trace(X,3)$logLs
+plot(x = seq(from = 0.5, to = length(logLs)/2, by = 1/2), y = logLs, 
+     type = "l", xlab = "iteration", ylab = "log-likelihood")
+points(x = seq(from = 0.5, to = length(logLs)/2, by = 1/2), y = logLs, col = "red")
+```
+
+### 5. La fonction BIC
+```{r}
+# la fonction qui prend la sortie de l'algorithme EM et rend le critère BIC.
+BIC <- function(params, X) {
+  N <- nrow(X)
+  logp <- 0
+  for (n in 1:N) {
+    p <- 0
+    for (k in 1:K) {
+      p <- p + params$pi[k]*prod(dbinom(x=X[n,],size=1,prob=params$M[k,]))
+    }
+    logp <- logp + log(p)
+  }
+  d_k <- 1
+  return(logp - d_k/2*log(N))
+}
+```
+
+```{r}
+params <- EM(X, 3)$params
+BIC(params, X)
+```
+
+### 6. La fonction ICL
+```{r}
+# la fonction qui prend la sortie de l'algorithme EM et rend le critère ICL.
+ICL <- function(params, tau, X) {
+  N <- nrow(X)
+  K <- length(params$pi)
+  rtn <- 0
+  for (n in 1:N) {
+    for (k in 1:K) {
+      rtn <- rtn + tau[n,k]*(log(params$pi[k])+sum(dbinom(x=X[n,],size=1,prob=params$M[Z[n],],log=T)))
+    }
+  }
+  d_k <- 1
+  return(rtn - d_k/2*log(N))
+}
+```
+
+```{r}
+params <- EM(X, 3)$params
+tau <- EM(X, 3)$tau
+ICL(params, tau, X)
+```
+
+
+## Exo 4 Données state-firearms
+```{r}
+dat <- read.csv(file = "raw_data.csv")
+rows <- as.matrix(dat[,-which(colnames(dat)%in%c("state","year","lawtotal"))])
+cols <- t(rows)
+```
+
+```{r}
+ggplot(dat) +
+ aes(x = year, y = lawtotal, colour = state) +
+ geom_line(size = 1L) +
+ scale_color_hue() +
+ theme_minimal()
+
+melt_rows <- melt(rows)
+melt_rows$value <- as.logical(melt_rows$value)
+ggplot(melt_rows, aes(x = Var2, y = Var1)) + 
+  geom_raster(aes(fill=value)) + 
+  scale_fill_brewer(aesthetics = "fill") + 
+  labs(x="Variables", y="Individus", title="Matrix")
+
+melt_cols <- melt(cols)
+melt_cols$value <- as.logical(melt_cols$value)
+ggplot(melt_cols, aes(x = Var2, y = Var1)) + 
+  geom_raster(aes(fill=value)) + 
+  scale_fill_brewer(aesthetics = "fill") + 
+  labs(x="Variables", y="Individus", title="Matrix")
+```
+
+Ici selon le première plot nous pouvons voir que dans le plupart des états, le nombre de lois relatives aux munitions augmente avec le temps .
+
+Après nous utilisons BIC pour determiner le nombre de K respectivement sur l'analise de lignes et de colonnes:
+```{r}
+library(mclust)
+clusters_mclust <- Mclust(rows) 
+print(clusters_mclust$G)
+plot(clusters_mclust, what = "BIC")
+
+clusters_mclust <- Mclust(cols) 
+print(clusters_mclust$G)
+plot(clusters_mclust, what = "BIC")
+```
+
+Nous supposons: pour les lignes $K=2$ et les colonnes $k=5$
+```{r}
+res_rows <- EM(X = rows, K = 2)
+print(res_rows$params)
+
+# rownames(cols) <- 1:nrow(cols)
+# res_cols <- EM(X = cols, K = 5) # out of bounds
+```
+

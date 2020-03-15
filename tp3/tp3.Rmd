@@ -1,0 +1,141 @@
+---
+title: "Mixture Models"
+author: "You ZUO"
+date: "2019/10/14"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## exo1
+```{r}
+library(mclust)
+nks <- rmultinom(n = 1, size = 1000, prob = c(1/3, 2/3))
+
+means <- c(0, 4)
+sds <- c(1, 1/2)
+sample <- mapply(function(nk, mean, sd){
+  rnorm(nk, mean, sd)}, nks, means, sds)
+
+sample <- unlist(sample)
+```
+
+```{r}
+curve(dnorm(x), from = -3, to = 7, col = "green")
+curve(dnorm(x, mean = 4, sd = 1/2), from = -3, to = 7, col = "orange")
+
+mixture <- function(x){
+  1/3*dnorm(x) + 2/3 * dnorm(x,4,1/2)
+}
+
+curve(mixture(x), -3, 7, add = T)
+
+
+```
+
+```{r}
+cl <- kmeans(x = sample, centers = 2, nstart = 20)
+hist(x = sample, probability = T, breaks = 30)
+points(sample, rep(0, 1000), col = c("blue", "orange")[cl$cluster])
+
+plot(x = sample, col = cl$cluster)
+
+list_of_samples <- split(sample, cl$cluster)
+lapply(list_of_samples, mean)
+lapply(list_of_samples, sd)
+```
+```{r}
+# E variances partagées, variances libres
+modelE <- Mclust(data = sample, G = 2, modelNames = "E", warn = F)
+modelV <- Mclust(data = sample, G = 2, modelNames = "V", warn = F)
+
+summary(modelE)
+summary(modelV)
+plot(modelE, what = "classification")
+plot(modelV, what = "classification")
+
+modelV$parameters$mean
+modelV$parameters$variance$sigmasq
+```
+
+```{r}
+nks <- rmultinom(n = 1, size = 1000, prob = c(1/3, 2/3))
+means <- c(0, 4)
+sds <- c(1, 1/2)
+sample <- mapply(function(nk, mean, sd){
+  rnorm(nk, mean, sd)}, nks, means, sds)
+x <- data.frame(unlist(sample))
+
+Init.EM <- function(x, k=2) {
+  # init
+  proportions <- rep(x = 1/k, times = k)
+  variances <- rep(x = 1, times = k)
+  means <- x[sample(1:nrow(x), k), ]
+  parameters <- list(proportions = proportions, variances = variances, means = means)
+  
+  return(parameters)
+}
+
+```
+
+```{r}
+x <- as.matrix(x)
+
+E.step <- function(x, parameters) {
+  K <- length(parameters$means)
+  Tik <- matrix(NA, nrow = nrow(x), ncol = K)
+
+  for (k in 1:K) {
+    Tik[,k] <- parameters$proportions[k] * dnorm(x[,1], mean = parameters$means[k], sd = parameters$variances[k])
+  }
+  
+  return(Tik <- Tik/rowSums(Tik))
+}
+
+
+M.step <- function(x, Tik, parameters) {
+  K <- length(parameters$means)
+  parameters$proportions <- colSums(Tik)/nrow(x)
+  
+  for (k in 1:K) {
+    parameters$means[k] <- sum(Tik[,k]*x) / sum(Tik[,k])
+    parameters$variances[k] <- sum(Tik[,k]*(x - parameters$means[k])^2)/sum(Tik[,k])
+  }
+  
+  return(parameters)
+}
+
+
+EM <- function(x, k) {
+  
+  parameters <- Init.EM(x, k)
+  iter <- 0
+  parameters.new <- parameters
+  repeat{
+    Tik <- E.step(x, parameters)
+    parameters <- M.step(x, Tik, parameters)
+    if((sum(unlist(parameters.new) - unlist(parameters))^2) / sum(unlist(parameters.new))^2 < 1e-20) break
+    parameters.new <- parameters
+  }
+  return(list(parameters = parameters.new, Tik = Tik))
+}
+```
+
+
+```{r}
+x <- data.frame(x)
+# EM(x,2)
+```
+
+## Exo2
+```{r}
+data(faithful)
+plot(faithful)
+
+res <- Mclust(data = faithful)
+plot(res)
+```
+
+
